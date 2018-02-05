@@ -153,7 +153,7 @@ abstract class Controller {
         if (!method_exists($this, $action)) {
             throw new NotFoundException("Function '".$action."' not found in ".get_class($this));
         }
-        return $this->$action(...$this->args);
+        return call_user_func_array($this->$action, $this->args);
     }
     
     function setParams($params = []) {
