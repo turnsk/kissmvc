@@ -6,70 +6,98 @@ Simple PHP MVC (Model-View-Controller) framework based on [KISSMVC](http://kissm
 ## Minimal setup
 Copy `index.html`, `kissmvc.php` and `.htacceess` into your project. Open `index.html` and setup your `APP_PATH` and `WEB_FOLDER` paths. Also setup your `.htaccess` file.
 
-## Mvp
-Mvp class is the heart of request life. It defines request parsing, PDO connection, params preprocessing, error handling. The main function of the class is prepare all necessary for request processing and route request to the right controller. Then also display processing result or handle error.  
-If you wish implement your own error handling or define your PDO connection, feel free to override this class.
+## Mvc
+Mvc class is the heart of request life. It allows you to define PDO connection or customise error handling. The main function of the class is to find the correct Controller and pass processing control to it. Most of the time you'll need to override this class to create PDO connection.
 
-Don't forget to call   `route` method of MVP class for routing request.
+Don't forget to call `route` method of `Mvc` class as the last instruction of your index.php.
 ```
-(new Mvp('defaultController', 'defaultAction'))->route();
+(new Mvc('defaultController', 'defaultAction'))->route();
 ```
 
-Once when the MVP is instantiate and you need something from MVP class, call `Mvp::getInstance()` to obtain Mvp instance.
+The terms controller and action are defined in the URL and follow the base URL (see WEB_FOLDER constant). For example, if the application is deployed under `https://example.com/path-to-app/` and you open the URL `https://example.com/path-to-app/user/list/`, the controller in this case is `user` and action is `list`. You may as well open `https://example.com/path-to-app/user/` in which case the action will be the `defaultAction` set in the `Mvc` constructor. If you even ommit the controller in the URL, the `defaultController` will be used as controller.
+
+Once the Mvc is instantiated and you need something from Mvc class, call `Mvc::getInstance()` to obtain Mvc instance.
 
 ## Controller class
+Each controller must have its own class declared (name in PascalCase and suffixed with `Controller`) in its own file located under `APP_PATH/controllers/` folder.
 
-Controller class file is located in `APP_PATH/controllers/` folder.  
-Controller file & class name start with Name of controller with `Controller` suffix. Both names must be equal.  
-Controller action called by MVP default definition must be public and begin with `_` prefix. Function will return, let's say anything. If result is instance of `View` class, then returned View is dumped as result.
+Each action for a controller must be defined as a separate method. If you follow the REST principles, the method name should be `{lower-case-http-method}_{action}`, e.g. `function get_list()`. In case you want to handle all HTTP methods with one method, just omit the prefix and follow the `_{action}` naming, e.g. `function _list()`. Usually all action calls should end with outputting (dumping) some View or redirecting to another controller/action. For view dump, use the `Controller::dumpView()` or `Controller::dumpJson()` methods or instatiate own `View` class should you need more control.
 
-Very important is access to parameters of function: `$_REQUEST` fields. You have option to obtain param by calling `Controller->getParam('key')`. If you need for some reason another way to prepare your params passed into controller, override `Mvp->preprocessParams()` method.
+To access parameters of the request in your controller, use `Controller::getParam($name)` method. This method reads HTTP GET or POST params by default, though in the case the request has `Content-Type: application/json` the controller tries to parse the request body as a JSON object and `Controller::getParam($name)` method returns the named value in that object.
 
 ```php
-class TestController extends Controller {
-
-	function _testFunction($action = '') {
-		// this function is called from url http://domain.com/test/testFunction
-	    return new JsonView();
-	}
-	
-	// example of custom action processing
-	public function process($action = '') {
-        $this->authenticate($action);
-        return parent::process($action);
-    }
-
-	private function authenticate($action = '') {
-		if ($action !== 'testFunction') {
-			throw new Exception('Not allowed method', 500);
-		}
+// File APP_PATH/controllers/UserController.php
+class UserController extends Controller {
+	function _list() {
+		// This function is called from url https://example.com/path-to-app/user/list/
+		$users = $this->loadUsers($this->getParam('query')); // Read a list of users here, see Model section below on how to do this with Model
+		$this->dumpView('userList', ['users' => $users]);
 	}
 }
 ```
 
+Controller class allows you to override the `preprocessParams` method to implement your own parameter reading and/or validation and `process($action, $args)` method to implement your own authorisation mechanism, etc.
 
 ## Model
+To access data in a database, you'll be using the `Model` class framework. For every DB table create a corresponding model class under `APP_PATH/models/` folder (e.g. for table `user` create class `User` in `User.php` file). In your constructor call the parent constructor with the table name and a list of table column names.
 
-Every Model class file is located in `APP_PATH/models/` folder.  Model object represent one row in database table.  PDO connection for models is defined in MVP class in `getPdo()` function.
 ```php
-class TestModel extends Model {
- 
+class User extends Model {
     public function __construct($id = null) {
-        parent::__construct('test_table', ['id', 'name', 'type', 'content', 'created', 'modified'], $id);
+        parent::__construct('user', ['id', 'name', 'email', 'password'], $id);
     }
 ```
-## View
-Very often you will return some View from as Controller action result. 
 
+### Create a DB entry
 ```php
-return new View('json', ['data' => $jsonData]);
+$user = new User();
+$user->name = 'John Doe';
+$user->email = 'john@doe.com';
+$user->password = sha1('unguessable password');
+if ($user->create()) {
+	print('Created a user with ID '.$user->id);
+}
 ```
 
-Example above return View, that load and dump `APP_PATH/views/json.php` file.
+### Read and update a DB entry
+```php
+$user = new User(1); // Load a user with ID=1
+// Alternative way to load an entry would be $user->retrieve(1)
+$user->email = 'john.doe@email.com';
+if ($user->update()) {
+	print('User '.$user->name.' updated');
+}
+```
+
+### Query entries
+```php
+$user = new User();
+$users = $user->retrieveMany('name LIKE % OR email LIKE %', [$query.'%', $query.'%']);
+print('Found '.count($users).' users:');
+for ($users as $user) {
+	print('- '.$user->name);
+}
+```
+
+## View
+Very often your Controller will dump a view. View is basically any output returned as a result from an action method. In the example above, we did the following:
+```php
+$this->dumpView('userList', ['users' => $users]);
+```
+
+For this view to work, we need to create file `APP_PATH/views/userList.php` with some content for the client, e.g.
+
+```html
+<h1>Users</h1>
+<ul>
+	<?php for ($users as $user) { ?>
+	<li><?= $user->name ?> (<?= $user->email ?>)</li>
+	<?php } ?>
+</ul>
+```
+
+If you're making a JSON REST API, you can dump any object as a JSON directly from Controller:
 
 ```php
-<?php
-
-header('Content-Type: application/json; charset=utf-8');
-print($data ? json_encode($data, JSON_UNESCAPED_UNICODE) : "{}");
+$this->dumpJson(['users' => $users]);
 ```
