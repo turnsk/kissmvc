@@ -152,7 +152,7 @@ abstract class Controller {
                 throw new NotFoundException('Method \''.$method.'\' nor \'_'.$action.'\' not found in '.get_class($this));
             }
         }
-        return call_user_func_array($method, $args);
+        return call_user_func_array([$this, $method], $args);
     }
 
     protected function getParams() {
