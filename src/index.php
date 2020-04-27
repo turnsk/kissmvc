@@ -7,4 +7,4 @@ define('WEB_FOLDER', '/'); // With trailing slash pls
 require_once('kissmvc.php');
 // Route the request with the default config
 // If you need DB or custom routing rules, override Mvp class and use your class
-(new Mvp())->route();
+(new Mvc())->route();
